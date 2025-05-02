@@ -14,23 +14,111 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# Codelabs Web Platform
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+A secure, modern, and interactive Codelab Environment built with Next.js, Tailwind CSS, Supabase, and Shadcn UI. Authenticated users can browse, read, and (soon) run code samples in isolated sandboxes, following hands-on tutorials inspired by Google Codelabs.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Features
 
-To learn more about Next.js, take a look at the following resources:
+- **Authentication:** Secure login (email/password only, sign-up disabled) via Supabase Auth.
+- **Codelab Listing:** Browse available codelabs/tutorials on the home page.
+- **Codelab Detail:** View rich markdown tutorials with syntax-highlighted code blocks (Python, JavaScript, etc.).
+- **Modern UI:** Responsive design, dark mode, and accessible components using Tailwind CSS and Shadcn UI.
+- **Secure Backend:** All secrets managed via `.env.local`. Row Level Security enabled for Supabase tables.
+- **Extensible:** Ready for future features like interactive code execution and sandboxed environments.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tech Stack
 
-## Deploy on Vercel
+- [Next.js 15 (App Router, RSC)](https://nextjs.org/)
+- [Tailwind CSS](https://tailwindcss.com/) with [@tailwindcss/typography](https://tailwindcss.com/docs/typography-plugin)
+- [Supabase](https://supabase.com/) (Auth, Database, RLS)
+- [Shadcn UI](https://ui.shadcn.com/) & [Radix UI](https://www.radix-ui.com/)
+- [react-markdown](https://github.com/remarkjs/react-markdown) + [prism-react-renderer](https://github.com/FormidableLabs/prism-react-renderer) for markdown/code
+- [TypeScript](https://www.typescriptlang.org/)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Getting Started
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/keshan/codelabs-web.git
+cd codelabs-web
+npm install
+```
+
+### 2. Configure Environment
+
+Copy `.env.local.example` to `.env.local` and fill in your Supabase project URL and anon key:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+### 3. Run Locally
+
+```bash
+npm run dev
+```
+
+Visit [http://localhost:3000](http://localhost:3000).
+
+---
+
+## Database Setup
+
+- Use the provided SQL in `docs/design.md` to create the `codelabs` table.
+- Enable Row Level Security (RLS) and add a policy to allow public `SELECT` for codelabs.
+- Add sample codelabs via the Supabase dashboard or SQL.
+
+---
+
+## Project Structure
+
+```
+src/
+  app/              # Next.js app directory (routing, pages)
+  components/       # UI and markdown components (Shadcn, custom)
+  lib/              # Supabase client, utilities, data fetching
+  types/            # TypeScript types
+  styles/           # Tailwind and global CSS
+```
+
+---
+
+## Security
+
+- All environment variables are loaded from `.env.local` (never commit secrets).
+- Supabase RLS restricts data access (see `docs/design.md` for policy guidance).
+- Only sign-in is enabled; sign-up is disabled for security.
+
+---
+
+## Roadmap
+
+- [ ] Interactive code execution (Python sandbox)
+- [ ] User progress tracking
+- [ ] Codelab authoring UI
+- [ ] Deployment (Cloud Run, Vercel, etc.)
+
+---
+
+## License
+
+MIT
+
+---
+
+## Credits
+
+- Inspired by [Google Codelabs](https://codelabs.developers.google.com/).
+- Built with [Next.js](https://nextjs.org/), [Supabase](https://supabase.com/), [Tailwind CSS](https://tailwindcss.com/), [Shadcn UI](https://ui.shadcn.com/).
+
+---
+
