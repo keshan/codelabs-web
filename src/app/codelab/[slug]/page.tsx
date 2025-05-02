@@ -13,7 +13,7 @@ interface CodelabPageProps {
 }
 
 export default async function CodelabPage({ params }: CodelabPageProps) {
-  const { slug } = params;
+  const { slug } = await params;
   const codelab = await fetchCodelabBySlug(slug);
 
   // If codelab is not found, trigger Next.js 404 page
