@@ -51,17 +51,17 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md dark:bg-gray-800">
-        <h2 className="mb-6 text-center text-2xl font-bold text-gray-900 dark:text-white">
-          Login to Codelabs
-        </h2>
+      <div className="w-full max-w-md rounded-lg border p-6 shadow-sm">
+        <h2 className="mb-6 text-center text-2xl font-semibold">Log In</h2>
         <Auth
           supabaseClient={supabase}
           appearance={{ theme: ThemeSupa }}
-          providers={['github', 'google']} // Add providers as needed
+          providers={[]} 
           redirectTo={redirectUrl}
-          theme="dark" // Match with Tailwind dark mode setup
+          view="sign_in" 
+          theme="dark" 
           socialLayout="horizontal"
+          showLinks={false} 
         />
       </div>
     </div>
