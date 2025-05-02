@@ -26,3 +26,31 @@ export async function fetchCodelabs(): Promise<Codelab[]> {
   // Ensure data conforms to the Codelab type, though Supabase client usually does
   return data as Codelab[];
 }
+
+/**
+ * Fetches a single codelab by its slug.
+ * @param slug The unique slug of the codelab.
+ * @returns Promise<Codelab | null>
+ */
+export async function fetchCodelabBySlug(slug: string): Promise<Codelab | null> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('codelabs')
+    .select('*') // Select all columns for the detail view
+    .eq('slug', slug)
+    .single(); // Expect only one result
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // PGRST116: The result contains 0 rows
+      console.log(`Codelab with slug '${slug}' not found.`);
+      return null; // Return null if not found
+    }
+    // Log other errors
+    console.error(`Error fetching codelab by slug '${slug}':`, error);
+    throw new Error(`Failed to fetch codelab: ${error.message}`);
+  }
+
+  return data as Codelab;
+}
