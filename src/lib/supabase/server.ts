@@ -2,32 +2,34 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 export function createClient() {
-  const cookieStore = cookies();
+  // No need to await cookies() here, it's awaited inside the handlers
+  const cookieStore = cookies(); 
 
-  // Create a server-side client with the user's session defined by cookies
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
+        // Make the get method async and await cookieStore
+        async get(name: string) {
           // NOTE: Linter might show error here, but `cookies()` returns synchronously
-          return cookieStore.get(name)?.value;
+          // Previous assumption was incorrect. cookies() must be awaited.
+          return (await cookieStore).get(name)?.value;
         },
-        set(name: string, value: string, options: CookieOptions) {
+        // Make the set method async and await cookieStore
+        async set(name: string, value: string, options: CookieOptions) {
           try {
-            // NOTE: Linter might show error here, but `cookies()` returns synchronously
-            cookieStore.set({ name, value, ...options });
+            (await cookieStore).set({ name, value, ...options });
           } catch (error) {
             // The `set` method was called from a Server Component.
             // This can be ignored if you have middleware refreshing
             // user sessions.
           }
         },
-        remove(name: string, options: CookieOptions) {
+        // Make the remove method async and await cookieStore
+        async remove(name: string, options: CookieOptions) {
           try {
-            // NOTE: Linter might show error here, but `cookies()` returns synchronously
-            cookieStore.set({ name, value: '', ...options });
+            (await cookieStore).set({ name, value: '', ...options });
           } catch (error) {
             // The `delete` method was called from a Server Component.
             // This can be ignored if you have middleware refreshing
