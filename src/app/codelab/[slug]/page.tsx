@@ -2,8 +2,7 @@ import { fetchCodelabBySlug } from '@/lib/data/codelabs';
 import { notFound } from 'next/navigation'; // Use Next.js notFound
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import ReactMarkdown from 'react-markdown'; // Import ReactMarkdown
-import remarkGfm from 'remark-gfm'; // Import GFM plugin
+import { MarkdownRenderer } from '@/components/ui/markdown/markdown-renderer'; // Import GFM plugin
 
 // Define props type including params
 interface CodelabPageProps {
@@ -35,9 +34,9 @@ export default async function CodelabPage({ params }: CodelabPageProps) {
 
         {/* Render Markdown content */}
         <div className="mt-8">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {codelab.content_markdown || '*No content available.*'}
-          </ReactMarkdown>
+          <MarkdownRenderer 
+            content={codelab.content_markdown || '*No content available.*'} 
+          />
         </div>
 
         {/* Placeholder for future interactive elements */}
