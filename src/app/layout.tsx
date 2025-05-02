@@ -15,11 +15,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark"> {/* Enable dark mode by default */}
+    <html lang="en" className="dark">{/* Ensure no extra spaces/newlines inside here */}
       {/* Correctly apply font className */}
       <body className={inter.className}>
         <main className="min-h-screen bg-background text-foreground">
-           {/* Simple wrapper, can add Header/Footer later */}
           {children}
         </main>
       </body>
