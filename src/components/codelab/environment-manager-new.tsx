@@ -39,6 +39,8 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
     setError, 
   } = useEnvironment();
 
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [pollingIntervalId, setPollingIntervalId] = useState<NodeJS.Timeout | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -119,49 +121,92 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
     setError(null);
 
     try {
+      // First check if there's an existing environment for this user and codelab
+      const response = await fetch(`/api/environments/retrieve?codelabId=${codelabId}`);
+      
+      if (!response.ok) {
+        // Server error but not a 404
+        if (response.status !== 404) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          console.error('[fetchInitialEnvironment] Error retrieving environment:', errorData);
+          setError(errorData?.error || 'Failed to retrieve environment status.');
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // Environment exists
+      const env: Environment = await response.json();
+      console.log('[fetchInitialEnvironment] Retrieved environment:', env);
+      setEnvironment(env);
+      
+      // If the environment is in PENDING status, start polling for updates
+      if (env.status === 'PENDING') {
+        console.log('[fetchInitialEnvironment] Environment is PENDING, starting polling');
+        startPolling(env.id);
+      } else {
+        setIsLoading(false);
+      }
+    } catch (err) {
+      console.error('[fetchInitialEnvironment] Unexpected error:', err);
+      setError((err as Error).message || 'An unexpected error occurred getting environment');
+      setIsLoading(false);
+    }
+  }, [codelabId, setEnvironment, setError, setIsLoading, startPolling, userId]);
+
+  const startEnvironment = async () => {
+    if (!userId || !codelabId) {
+      setError('Missing user ID or codelab ID');
+      return;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    setIsStarting(true);
+
+    try {
+      // Send request to start or create environment
       const response = await fetch('/api/environments/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ codelab_id: codelabId }),
+        body: JSON.stringify({
+          codelabId,
+        }),
       });
 
-      const data: Environment = await response.json(); 
+      const data = await response.json();
 
-      if (!response.ok) { 
-        const errorPayload = data as any; 
-        const message = errorPayload?.error || errorPayload?.message || response.statusText;
-        console.error('Error starting environment:', message, 'Status:', response.status);
-        setError(message || `Failed to start environment (Status: ${response.status})`);
-        setEnvironment(null); 
-      } else {
-        setEnvironment(data); 
-        setError(null);
-
-        if (data.status === 'PENDING') {
-          startPolling(data.id); 
-        } else {
-          setIsLoading(false); 
-        }
+      if (!response.ok) {
+        setError(data.error || 'Failed to start environment');
+        setIsLoading(false);
+        setIsStarting(false);
+        return;
       }
+
+      console.log('[startEnvironment] Environment started:', data);
+      setEnvironment(data);
+      
+      // Start polling if environment is PENDING, otherwise we're done
+      if (data.status === 'PENDING') {
+        startPolling(data.id);
+      } else {
+        setIsLoading(false);
+      }
+
     } catch (err) {
-      console.error('Fetch error in startEnvironment:', err);
-      setError((err as Error).message || 'An unexpected network error occurred.');
-      setEnvironment(null);
-      setIsLoading(false); 
-    } 
-  }, [codelabId, userId, setEnvironment, setIsLoading, setError, startPolling]);
+      console.error('[startEnvironment] Error starting environment:', err);
+      setError((err as Error).message || 'An unexpected error occurred');
+      setIsLoading(false);
+    } finally {
+      setIsStarting(false);
+    }
+  };
 
-  const startEnvironment = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    console.log(`[startEnvironment] Called. Current state: environmentId=${environment?.id}, status=${environment?.status}`);
+  const stopEnvironment = async () => {
+    if (!environment) return;
     
-    // Only proceed if not already running or starting
-    if (environment?.status === 'RUNNING') {
-      console.log('[startEnvironment] Already running. Skipping.');
     setError(null);
     setIsStopping(true);
 
@@ -206,9 +251,6 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
     };
   }, [fetchInitialEnvironment, stopPolling]);
 
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
-
   return (
     <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -224,7 +266,7 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
           <Alert variant="destructive" className="mb-4 border-red-500/50 text-red-500 dark:border-red-500 [&>svg]:text-red-500">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error Starting Environment</AlertTitle>
-            {error && <AlertDescription>{error}</AlertDescription>}
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
@@ -319,7 +361,6 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
             </Button>
           )}
         </div>
-
       </CardContent>
     </Card>
   );

@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/ui/markdown/markdown-renderer'; // Import GFM plugin
 import { createClient } from '@/lib/supabase/server';
-import { EnvironmentManager } from '@/components/codelab/environment-manager';
+import { FloatingEnvironmentManager } from '@/components/codelab/floating-environment-manager';
 import { EnvironmentProvider } from '@/contexts/environment-context'; // Import the provider
 
 // Define props type including params
@@ -47,44 +47,35 @@ export default async function CodelabPage({ params }: CodelabPageProps) {
           )}
         </header>
 
-        {/* Main Content Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
-          {/* Markdown Content (Left Column / Main Area) */}
-          <article className="prose dark:prose-invert max-w-none lg:col-span-2">
-            {codelab.content_markdown ? (
-              <MarkdownRenderer content={codelab.content_markdown} />
-            ) : (
-              <p className="text-muted-foreground italic">No content available for this codelab.</p>
-            )}
-          </article>
+        {/* Environment Manager - Only shown if user is logged in */}
+        {user && (
+          <FloatingEnvironmentManager codelabId={codelab.id} userId={user.id} />
+        )}
 
-          {/* Sidebar Area (Right Column) */} 
-          <aside className="lg:col-span-1 space-y-6 lg:sticky lg:top-24 self-start">
-            {/* Environment Manager - Only shown if user is logged in */} 
-            {user && (
-              <EnvironmentManager codelabId={codelab.id} userId={user.id} />
-            )}
+        {/* Main Content Area - Full Width */}
+        <article className="prose dark:prose-invert max-w-4xl mx-auto">
+          {codelab.content_markdown ? (
+            <MarkdownRenderer content={codelab.content_markdown} />
+          ) : (
+            <p className="text-muted-foreground italic">No content available for this codelab.</p>
+          )}
+        </article>
 
-            {/* Message for logged-out users */}
-            {!user && (
-              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 text-center">
-                <h3 className="text-lg font-semibold mb-3">Start Interactive Session</h3>
-                <p className="text-sm text-muted-foreground mb-4"> 
-                  <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:no-underline">
-                    Log in
-                  </Link>
-                  {' '}or{' '}
-                  {/* TODO: Add signup link if/when implemented */}
-                  {/* <Link href="/signup" className="font-medium text-primary underline underline-offset-4 hover:no-underline">Sign up</Link> */}
-                  create an account to launch the interactive environment for this codelab.
-                </p>
-                <Button asChild size="sm">
-                  <Link href="/login">Log In</Link>
-                </Button>
-              </div>
-            )}
-          </aside>
-        </div>
+        {/* Message for logged-out users */}
+        {!user && (
+          <div className="fixed bottom-4 right-4 w-72 rounded-lg border bg-card text-card-foreground shadow-md p-4 text-center z-50">
+            <h3 className="text-sm font-semibold mb-2">Interactive Python</h3>
+            <p className="text-xs text-muted-foreground mb-3"> 
+              <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:no-underline">
+                Log in
+              </Link>
+              {' '}to run Python code in this codelab.
+            </p>
+            <Button asChild size="sm">
+              <Link href="/login">Log In</Link>
+            </Button>
+          </div>
+        )}
       </main>
     </EnvironmentProvider>
   );
