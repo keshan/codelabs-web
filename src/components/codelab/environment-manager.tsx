@@ -40,6 +40,8 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
   } = useEnvironment();
 
   const [pollingIntervalId, setPollingIntervalId] = useState<NodeJS.Timeout | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
 
   const stopPolling = useCallback(() => {
     if (pollingIntervalId) {
@@ -156,45 +158,96 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
   const startEnvironment = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setIsStarting(true);
 
     console.log(`[startEnvironment] Called. Current state: environmentId=${environment?.id}, status=${environment?.status}`);
     
     // Only proceed if not already running or starting
     if (environment?.status === 'RUNNING') {
       console.log('[startEnvironment] Already running. Skipping.');
-    setError(null);
-    setIsStopping(true);
+      setIsLoading(false);
+      setIsStarting(false);
+      return;
+    }
 
     try {
-      const response = await fetch('/api/environments/stop', {
+      console.log('[startEnvironment] Sending request to /api/environments/start');
+      const response = await fetch('/api/environments/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          environmentId: environment.id,
-        }),
+        body: JSON.stringify({ codelabId }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        console.error('[stopEnvironment] Failed to stop environment:', data);
-        setError(data.error || 'Failed to stop environment');
-        setIsStopping(false);
-        return;
-      }
+        const errorMessage = data?.error || data?.message || response.statusText;
+        console.error('Error starting environment:', errorMessage, 'Status:', response.status);
+        setError(errorMessage || `Failed to start environment (Status: ${response.status})`);
+        setEnvironment(null);
+        setIsLoading(false);
+      } else {
+        setEnvironment(data);
+        setError(null);
 
-      // Update local state with the returned data
-      console.log('[stopEnvironment] Environment stopped:', data);
-      setEnvironment(data);
+        if (data.status === 'PENDING') {
+          startPolling(data.id);
+        } else {
+          setIsLoading(false);
+        }
+      }
     } catch (err) {
-      console.error('[stopEnvironment] Error stopping environment:', err);
-      setError((err as Error).message || 'An unexpected error occurred');
+      console.error('Fetch error in startEnvironment:', err);
+      setError((err as Error).message || 'An unexpected network error occurred.');
+      setEnvironment(null);
+      setIsLoading(false);
     } finally {
+      setIsStarting(false);
+    }
+  }, [codelabId, environment, setEnvironment, setError, setIsLoading, startPolling]);
+
+  const stopEnvironment = useCallback(async () => {
+    if (!environment || environment.status !== 'RUNNING') {
+      console.log('[stopEnvironment] Cannot stop, not in RUNNING state.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setIsStopping(true);
+    stopPolling(); // Stop any active polling immediately
+
+    try {
+      console.log(`[stopEnvironment] Stopping environment: ${environment.id}`);
+      const response = await fetch('/api/environments/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ environmentId: environment.id }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = data?.error || data?.message || response.statusText;
+        console.error('Error stopping environment:', errorMessage, 'Status:', response.status);
+        setError(errorMessage || `Failed to stop environment (Status: ${response.status})`);
+      } else {
+        console.log('[stopEnvironment] Successfully stopped. New state:', data);
+        setEnvironment(data);
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Error in stopEnvironment:', err);
+      setError((err as Error).message || 'An unknown error occurred while stopping.');
+    } finally {
+      setIsLoading(false);
       setIsStopping(false);
     }
-  };
+  }, [environment, setEnvironment, setError, setIsLoading, stopPolling]);
 
   // Initial fetch on component mount
   useEffect(() => {
@@ -205,9 +258,6 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
       stopPolling();
     };
   }, [fetchInitialEnvironment, stopPolling]);
-
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
 
   return (
     <Card className="shadow-sm">
