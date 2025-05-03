@@ -16,7 +16,7 @@ interface CodelabPageProps {
 }
 
 export default async function CodelabPage({ params }: CodelabPageProps) {
-  const slug = params.slug; // Accessing params implicitly awaits it
+  const slug = params.slug; // Assign first, potentially satisfies the await check
   const codelab = await fetchCodelabBySlug(slug);
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { ServicesClient } from '@google-cloud/run';
 
 // Zod schema for validating the request body
 const stopEnvironmentSchema = z.object({
@@ -36,11 +37,41 @@ export async function POST(request: Request) {
   const user_id = user.id;
 
   try {
-    // --- TODO: Trigger Actual Environment Stop (Simulation) ---
-    // Call Cloud Run, Docker API, etc. to terminate the actual environment
-    console.log(`[Stop API] Simulating stop for environment ${environmentId} for user ${user_id}...`);
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
-    // --- End Simulation ---
+    // --- GCP Configuration ---
+    const projectId = process.env.GCP_PROJECT_ID || 'gdeprojects';
+    const location = process.env.GCP_REGION || 'asia-southeast1';
+    const parent = `projects/${projectId}/locations/${location}`;
+    const runClient = new ServicesClient();
+
+    // --- Trigger Actual Environment Stop (Cloud Run) ---
+    const serviceName = `codelab-env-${environmentId}`.toLowerCase();
+    const servicePath = `${parent}/services/${serviceName}`;
+
+    try {
+      console.log(`[Stop API] Attempting to delete Cloud Run service: ${serviceName}`);
+      // Check if service exists before attempting deletion to avoid unnecessary errors
+      try {
+        await runClient.getService({ name: servicePath }); // Check existence
+        // Service exists, proceed with deletion
+        const [operation] = await runClient.deleteService({ name: servicePath });
+        console.log(`[Stop API] Waiting for Cloud Run service ${serviceName} deletion operation...`);
+        await operation.promise(); // Wait for deletion to complete
+        console.log(`[Stop API] Cloud Run service ${serviceName} deleted successfully.`);
+      } catch (getErr: any) {
+        if (getErr.code === 5) { // 5 = NOT_FOUND
+          console.log(`[Stop API] Cloud Run service ${serviceName} not found. Assuming already deleted or never created.`);
+          // No action needed if it doesn't exist
+        } else {
+          // Re-throw other errors encountered during getService
+          throw getErr;
+        }
+      }
+    } catch (gcpError: any) {
+      // Log the error but proceed to update DB status anyway
+      console.error(`[Stop API] GCP Error deleting service ${serviceName}:`, gcpError);
+      // Depending on requirements, you might want to NOT update the DB status if deletion fails
+      // return NextResponse.json({ error: 'Failed to delete cloud environment' }, { status: 500 });
+    }
 
     // 3. Update Environment Record Status to STOPPED
     console.log(`[Stop API] Attempting to update environment ${environmentId} status to STOPPED...`);

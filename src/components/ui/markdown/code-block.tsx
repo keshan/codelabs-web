@@ -61,7 +61,6 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
         },
         body: JSON.stringify({
           environmentId: environment.id,
-          language: normalizedLanguage,
           code: code,
         }),
       });
@@ -72,12 +71,13 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
         throw new Error(result.error || `Execution failed with status: ${response.status}`);
       }
 
-      setOutput(result.output);
-      setExecError(null);
+      setOutput(result.stdout || ''); 
+      setExecError(result.stderr || null); 
+      
+      console.log('Execution completed with exit code:', result.exit_code);
     } catch (error: any) {
       console.error('Execution error:', error);
       setExecError(error.message || 'An unexpected error occurred during execution.');
-      setOutput(null);
     } finally {
       setIsExecuting(false);
     }

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { ServicesClient } from '@google-cloud/run';
+import { google } from '@google-cloud/run/build/protos/protos'; // Specific types like IService
 
 // Define the expected request body schema
 const startEnvironmentSchema = z.object({
@@ -132,31 +134,134 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Internal server error processing environment state' }, { status: 500 });
     }
 
-    // --- At this point, envToProcess is either a newly created PENDING record,
-    // --- or an existing record with status PENDING, STOPPED, or ERROR.
-    // --- Proceed to simulation and update to RUNNING. ---
+    // --- GCP Configuration ---
+    const projectId = process.env.GCP_PROJECT_ID;
+    const location = process.env.GCP_REGION;
+    const gcrImagePath = process.env.GCR_IMAGE_PATH;
 
-    // --- TODO: Trigger Actual Environment Creation (Simulation) --- 
-    // This is where you would call Cloud Run, Docker API, etc.
-    // For now, we simulate success and update the status immediately.
-    // In a real scenario, this might involve polling or waiting for a callback.
-    console.log(`Simulating creation/update for environment ${envToProcess.id}...`);
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate delay
-    const simulatedContainerId = `sim-${envToProcess.id.substring(0, 8)}`;
-    const simulatedConnectionDetails = { internalUrl: `http://${simulatedContainerId}:8080` };
-    // --- End Simulation ---
+    if (!projectId || !location || !gcrImagePath) {
+      console.error('[Start API] Missing required GCP environment variables (GCP_PROJECT_ID, GCP_REGION, GCR_IMAGE_PATH)');
+      return NextResponse.json({ error: 'Server configuration error: Missing GCP settings.' }, { status: 500 });
+    }
 
-    // 5. Update Environment Record (Status: RUNNING, add details)
-    console.log(`Attempting to update environment ${envToProcess.id} to RUNNING...`);
+    const parent = `projects/${projectId}/locations/${location}`;
+    const runClient = new ServicesClient();
+
+    // --- Helper Function for Service Creation ---
+    async function createCloudRunService(serviceName: string): Promise<string> {
+      console.log(`[Start API] Creating new Cloud Run service: ${serviceName}`);
+      // Let TypeScript infer the type, as the explicit IService type doesn't match the creation structure
+      const serviceConfig = {
+        metadata: {
+          name: serviceName,
+          namespace: projectId,
+          annotations: { 'run.googleapis.com/launch-stage': 'BETA' },
+        },
+        template: {
+          containers: [{
+            image: gcrImagePath,
+            ports: [{ containerPort: 8080 }],
+            resources: {
+              limits: { cpu: '1000m', memory: '512Mi' },
+            },
+          }],
+        },
+        traffic: [{
+          type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST' as const,
+          percent: 100,
+        }],
+      };
+
+      try {
+        const [operation] = await runClient.createService({
+          parent: parent,
+          service: serviceConfig,
+          serviceId: serviceName,
+        });
+        console.log(`[Start API] Waiting for Cloud Run service ${serviceName} creation operation...`);
+        const lroResponse = await operation.promise();
+        const createdService = lroResponse[0];
+
+        if (createdService?.uri) {
+          console.log(`[Start API] Cloud Run service ${serviceName} created successfully at ${createdService.uri}`);
+          return createdService.uri;
+        } else {
+          console.error('[Start API] Cloud Run service created but no URI found in LRO response:', lroResponse);
+          throw new Error('Cloud Run service created, but failed to get its URL.');
+        }
+      } catch (creationError: any) {
+        console.error(`[Start API] GCP Error during createService ${serviceName}:`, creationError);
+        throw new Error(`Failed to create Cloud Run service: ${creationError.details || creationError.message}`);
+      }
+    }
+    // --- End Helper Function ---
+
+    // --- Trigger Actual Environment Creation (Cloud Run) --- 
+    const serviceName = `codelab-env-${envToProcess.id}`.toLowerCase(); // Ensure lowercase for service name
+    const servicePath = `${parent}/services/${serviceName}`;
+    let serviceUrl: string;
+
+    try {
+      console.log(`[Start API] Checking for existing Cloud Run service: ${serviceName}`);
+      // Check if service already exists (simple check, more robust logic might be needed)
+      try {
+        const [existingService] = await runClient.getService({ name: servicePath });
+        console.log(`[Start API] Found existing Cloud Run service: ${serviceName}`);
+        if (existingService.uri) {
+          serviceUrl = existingService.uri;
+          // Optionally: Check if it's healthy or needs update
+        } else {
+          // Service exists but lacks URI. Delete it first.
+          console.warn(`[Start API] Existing service ${serviceName} found but has no URI. Deleting before recreating...`);
+          try {
+            const [deleteOperation] = await runClient.deleteService({ name: servicePath });
+            console.log(`[Start API] Waiting for deletion of unusable service ${serviceName}...`);
+            await deleteOperation.promise();
+            console.log(`[Start API] Unusable service ${serviceName} deleted successfully.`);
+            // Now create it
+            serviceUrl = await createCloudRunService(serviceName);
+          } catch (deleteError: any) {
+            console.error(`[Start API] Failed to delete existing unusable service ${serviceName}:`, deleteError);
+            throw new Error(`Failed to clean up unusable existing service: ${deleteError.details || deleteError.message}`);
+          }
+        }
+      } catch (getErr: any) {
+        if (getErr.code === 5) { // 5 = NOT_FOUND (or simulated NOT_FOUND)
+          // Service not found, create it.
+          console.log(`[Start API] No existing service found. Creating new Cloud Run service: ${serviceName}`);
+          serviceUrl = await createCloudRunService(serviceName);
+        } else {
+          // Handle other errors during getService (permissions, etc.)
+          console.error(`[Start API] GCP Error checking for service ${serviceName}:`, getErr);
+          throw new Error(`Failed to check Cloud Run service status: ${getErr.details || getErr.message}`);
+        }
+      }
+    } catch (gcpError: any) {
+      console.error(`[Start API] GCP Error creating/getting service ${serviceName}:`, gcpError);
+      // Update DB to ERROR state maybe?
+      await supabase.from('environments').update({ status: 'ERROR', last_accessed_at: new Date().toISOString(), connection_details: { error: `GCP Error: ${gcpError.message}` } }).eq('id', envToProcess.id);
+      return NextResponse.json({ error: 'Failed to create or access cloud environment' }, { status: 500 });
+    }
+
+    // Ensure we got a service URL before proceeding
+    if (!serviceUrl) {
+      console.error(`[Start API] Failed to obtain service URL for environment ${envToProcess.id}`);
+      await supabase.from('environments').update({ status: 'ERROR', last_accessed_at: new Date().toISOString(), connection_details: { error: 'Failed to obtain Cloud Run service URL.' } }).eq('id', envToProcess.id);
+      return NextResponse.json({ error: 'Failed to obtain cloud environment URL' }, { status: 500 });
+    }
+
+    // --- Update Environment Record Status to RUNNING --- 
+    console.log(`[Start API] Updating environment ${envToProcess.id} status to RUNNING in DB...`);
     const { data: updatedEnv, error: updateError } = await supabase
       .from('environments')
       .update({
         status: 'RUNNING',
-        container_id: simulatedContainerId,
-        connection_details: simulatedConnectionDetails,
-        last_accessed_at: new Date().toISOString() // Update access time
+        connection_details: { serviceUrl: serviceUrl }, // Store the Cloud Run service URL
+        container_id: null, // We are not using a specific container ID here
+        last_accessed_at: new Date().toISOString()
       })
-      .eq('id', envToProcess.id) // Update the record we're processing
+      .eq('id', envToProcess.id)
+      // RLS Check: user_id is checked during the initial select/insert
       .select()
       .single();
 
