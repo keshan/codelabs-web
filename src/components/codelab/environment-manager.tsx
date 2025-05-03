@@ -202,12 +202,58 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
     } 
   }, [codelabId, userId, setEnvironment, setIsLoading, setError, startPolling, environment]);
 
+  const stopEnvironment = useCallback(async () => {
+    if (!environment || environment.status !== 'RUNNING') {
+      console.log('[stopEnvironment] Cannot stop, not in RUNNING state.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    stopPolling(); // Stop any active polling immediately
+
+    console.log(`[stopEnvironment] Stopping environment: ${environment.id}`);
+
+    try {
+      const response = await fetch('/api/environments/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ environmentId: environment.id }),
+      });
+
+      const data: Environment = await response.json();
+
+      if (!response.ok) {
+        const errorPayload = data as any;
+        const message = errorPayload?.error || errorPayload?.message || response.statusText;
+        console.error('Error stopping environment:', message, 'Status:', response.status);
+        setError(message || `Failed to stop environment (Status: ${response.status})`);
+        // Update state partially to reflect failure if needed, or leave as RUNNING
+        // setEnvironment(prev => prev ? { ...prev, status: 'ERROR' } : null);
+      } else {
+        console.log('[stopEnvironment] Successfully stopped. New state:', data);
+        setEnvironment(data); // Update state to STOPPED
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Error in stopEnvironment:', err);
+      setError((err as Error).message || 'An unknown error occurred while stopping.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [environment, setEnvironment, setError, stopPolling]);
+
   useEffect(() => {
     fetchInitialEnvironment();
     return () => {
       stopPolling();
     };
   }, [fetchInitialEnvironment, stopPolling]);
+
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
 
   return (
     <Card className="shadow-sm">
@@ -271,32 +317,29 @@ export function EnvironmentManager({ codelabId, userId }: EnvironmentManagerProp
           </p>
         )}
 
-        <Button
-          onClick={startEnvironment}
-          disabled={isLoading || environment?.status === 'PENDING'}
-          className="mt-4"
-          variant={
-            environment?.status === 'RUNNING' ? 'destructive'
-            : environment?.status === 'ERROR' || error ? 'secondary'
-            : 'default'
-          }
-        >
-          {isLoading || environment?.status === 'PENDING' ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : environment?.status === 'RUNNING' ? (
-            <Power className="mr-2 h-4 w-4" />
-          ) : (
-            <PlayCircle className="mr-2 h-4 w-4" />
+        <div className="flex space-x-2">
+          {(!environment || environment.status === 'STOPPED' || environment.status === 'ERROR') && (
+            <Button 
+              onClick={startEnvironment} 
+              disabled={isStarting || isStopping} 
+              size="sm"
+            >
+              {isStarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+              {isStarting ? 'Starting...' : 'Start Environment'}
+            </Button>
           )}
-          {isLoading || environment?.status === 'PENDING'
-            ? 'Starting...'
-            : environment?.status === 'RUNNING'
-              ? 'Stop Environment' 
-              : environment?.status === 'ERROR' || error
-                ? 'Retry'
-                : 'Start Environment'
-          }
-        </Button>
+          {environment && environment.status === 'RUNNING' && (
+            <Button 
+              variant="destructive" 
+              onClick={stopEnvironment} 
+              disabled={isStarting || isStopping} 
+              size="sm"
+            >
+              {isStopping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
+              {isStopping ? 'Stopping...' : 'Stop Environment'}
+            </Button>
+          )}
+        </div>
 
       </CardContent>
     </Card>

@@ -48,9 +48,9 @@ export async function POST(request: Request) {
     let envToProcess: any = existingEnv; // Use 'any' for easier handling temporarily
     let httpStatus = 200; // Default status for returning existing/updated
 
-    // If environment exists AND is NOT PENDING, just update access time and return it.
-    if (existingEnv && existingEnv.status !== 'PENDING') {
-      console.log(`Existing environment found with status '${existingEnv.status}'. Returning.`);
+    // If environment exists AND is already RUNNING, just update access time and return it.
+    if (existingEnv && existingEnv.status === 'RUNNING') {
+      console.log(`[Start API] Found existing environment with status 'RUNNING'. Returning.`);
       // Update last_accessed_at (best effort, don't block response)
       supabase
         .from('environments')
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       return NextResponse.json(existingEnv, { status: 200 });
     }
 
-    // --- If environment does NOT exist, or it exists but IS PENDING --- 
+    // --- If environment does NOT exist, or it exists but is NOT RUNNING (i.e., PENDING, STOPPED, ERROR) --- 
 
     if (!existingEnv) {
       console.log('No existing environment found. Creating new one.');
@@ -120,8 +120,8 @@ export async function POST(request: Request) {
         console.log(`Created new environment record (PENDING) with ID: ${envToProcess!.id}`);
       }
     } else {
-      // Environment exists and IS PENDING
-      console.log(`Existing environment found with status PENDING (ID: ${existingEnv.id}). Proceeding to update.`);
+      // Environment exists and is NOT RUNNING (i.e., PENDING, STOPPED, ERROR)
+      console.log(`Existing environment found with status ${existingEnv.status} (ID: ${existingEnv.id}). Proceeding to update.`);
       // envToProcess is already set to existingEnv
       // httpStatus remains 200 (OK, since we updated an existing resource)
     }
@@ -131,6 +131,10 @@ export async function POST(request: Request) {
       console.error('API Logic Error: envToProcess is null after check/create logic.');
       return NextResponse.json({ error: 'Internal server error processing environment state' }, { status: 500 });
     }
+
+    // --- At this point, envToProcess is either a newly created PENDING record,
+    // --- or an existing record with status PENDING, STOPPED, or ERROR.
+    // --- Proceed to simulation and update to RUNNING. ---
 
     // --- TODO: Trigger Actual Environment Creation (Simulation) --- 
     // This is where you would call Cloud Run, Docker API, etc.
